@@ -96,6 +96,7 @@ export async function syncWallets(addresses, opts = {}) {
       try {
         dated += (await syncWallet(address, opts)).dated;
       } catch (e) {
+        console.error(`sync failed for ${address}: ${e.message}`);
         errors.push({ address, message: e.message });
       }
     }
