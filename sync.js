@@ -3,6 +3,11 @@ import { fetchHoldings, firstTouchedAt, reconstructPosition } from './helius.js'
 
 const CONCURRENCY = Number(process.env.CONCURRENCY || 4);
 
+// Each undated position costs a history call, and a hosted proxy will cut the request off
+// long before a wallet holding hundreds of tokens finishes. Cap the work per pass; the
+// remainder is dated on the next refresh, so repeated presses converge on a fully dated set.
+const MAX_DATED_PER_SYNC = Number(process.env.MAX_DATED_PER_SYNC || 20);
+
 /**
  * Derive a position's real history from chain: when the current streak started and the
  * true peak since. Falls back to the token account's creation time if the parsed history
@@ -43,8 +48,10 @@ export async function syncWallet(address, { backfill = true, rebuild = false } =
     let estimated = holding ? prev.estimated : 0;
     let peak_amount = Math.max(h.amount, holding ? (prev.peak_amount ?? 0) : 0);
 
-    // Rebuild re-derives everything; otherwise only mints we have no record of.
-    if (rebuild || (!prev && backfill)) {
+    // Date it from chain if we've never recorded it, or if a previous pass could only
+    // approximate it. Bounded so one refresh can't run forever.
+    const needsDating = rebuild || !prev || prev.estimated === 1;
+    if (needsDating && dated < MAX_DATED_PER_SYNC) {
       const chain = await fromChain(h, address);
       if (chain) {
         held_since = chain.held_since;
