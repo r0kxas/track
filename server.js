@@ -46,6 +46,15 @@ if (PASSWORD) {
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 
+// GitHub's web uploader flattens folders, so index.html often lands at the repo root
+// instead of public/. Serve it from there too rather than returning a bare 404. Only
+// this one file — the rest of the directory holds source and secrets, never served.
+app.get('/', (req, res, next) => {
+  const rootIndex = fileURLToPath(new URL('./index.html', import.meta.url));
+  if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
+  next();
+});
+
 const wrap = fn => (req, res) =>
   Promise.resolve(fn(req, res)).catch(e => res.status(500).json({ error: e.message }));
 
