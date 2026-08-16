@@ -1,9 +1,20 @@
 import 'dotenv/config';
 import express from 'express';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { q } from './db.js';
 import { syncWallets, snapshotAll, pruneSnapshots } from './sync.js';
 import { walletRows, combine, FIELDS, OPS } from './rules.js';
+
+// Resolved against this file, not the working directory, so it doesn't depend on where
+// the process was started from.
+const PUBLIC_DIR = fileURLToPath(new URL('./public', import.meta.url));
+
+if (!fs.existsSync(`${PUBLIC_DIR}/index.html`)) {
+  console.error(`No index.html found in ${PUBLIC_DIR} — the dashboard will 404.`);
+  console.error('The file belongs at public/index.html, not the repository root.');
+}
 
 const app = express();
 const HOSTED = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.FORCE_AUTH);
@@ -33,7 +44,7 @@ if (PASSWORD) {
 }
 
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(PUBLIC_DIR));
 
 const wrap = fn => (req, res) =>
   Promise.resolve(fn(req, res)).catch(e => res.status(500).json({ error: e.message }));
