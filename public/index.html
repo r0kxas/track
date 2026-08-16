@@ -233,7 +233,16 @@
 const $ = id => document.getElementById(id);
 const api = async (url, opts) => {
   const res = await fetch(url, opts && { headers: { 'Content-Type': 'application/json' }, ...opts });
-  const data = await res.json();
+  const body = await res.text();
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    // Proxies and gateways answer in plain text when a request times out or the app
+    // is unreachable. Show what they actually said instead of a JSON parse error.
+    throw new Error(res.ok ? `Unexpected response: ${body.slice(0, 120)}`
+                           : `${res.status}: ${body.slice(0, 120) || res.statusText}`);
+  }
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 };
