@@ -32,7 +32,6 @@ export async function fetchHoldings(owner) {
     const r = await rpc('searchAssets', {
       ownerAddress: owner,
       tokenType: 'fungible',
-      burnt: false,
       page,
       limit: 1000,
     });
