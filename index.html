@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallet criteria tracker</title>
+<style>
+  :root {
+    --ink:       #16131F;
+    --panel:     #1E1A2B;
+    --panel-2:   #262138;
+    --line:      #332C48;
+    --text:      #EAE6F2;
+    --muted:     #8E86A8;
+    --amber:     #F2B33D;
+    --teal:      #4FD1B0;
+    --red:       #E1685F;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--ink); z-index: 5;
+  }
+  h1 {
+    margin: 0; font-size: 13px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase;
+  }
+  h1 span { color: var(--amber); }
+  .stamp { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-left: auto; }
+
+  .refresh {
+    background: var(--amber); color: #201A0B; border: 0; border-radius: 4px;
+    padding: 8px 18px; font-weight: 650; letter-spacing: .04em;
+  }
+  .refresh:disabled, .rebuild:disabled { opacity: .55; cursor: wait; }
+  .rebuild {
+    background: none; border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 14px; color: var(--muted);
+  }
+  .rebuild:hover { border-color: var(--amber); color: var(--text); }
+  .refresh:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--teal); outline-offset: 2px;
+  }
+
+  main { display: grid; grid-template-columns: 300px 1fr; align-items: start; }
+  aside { border-right: 1px solid var(--line); min-height: calc(100vh - 52px); }
+  section { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 10px;
+  }
+
+  .wallet {
+    display: flex; align-items: center; gap: 9px; padding: 6px 0;
+    border-bottom: 1px solid rgba(51,44,72,.5);
+  }
+  .wallet:last-child { border-bottom: 0; }
+  .wallet label { flex: 1; min-width: 0; cursor: pointer; }
+  .wallet .nm { display: block; font-weight: 550; }
+  .wallet .ad { display: block; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .wallet .ct { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+  .wallet .rm { background: none; border: 0; color: var(--muted); padding: 2px 4px; }
+  .wallet .rm:hover { color: var(--red); }
+
+  input[type="text"], input[type="number"], select {
+    width: 100%; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 7px 9px; margin-bottom: 6px;
+  }
+  input::placeholder { color: #5F5878; }
+  .ghost {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 7px; font-weight: 550;
+  }
+  .ghost:hover { border-color: var(--amber); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+  .minrow { position: relative; }
+  .minrow .dollar {
+    position: absolute; left: 9px; top: 7px; color: var(--muted); font-family: var(--mono);
+  }
+  .minrow input { padding-left: 20px; font-family: var(--mono); }
+  .chips { display: flex; gap: 4px; }
+  .chip {
+    flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 5px 0; font-size: 11px; color: var(--muted);
+  }
+  .chip[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+  .hint { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab {
+    background: none; border: 1px solid var(--line); border-radius: 4px;
+    padding: 6px 14px; color: var(--muted);
+  }
+  .tab[aria-selected="true"] { background: var(--panel-2); color: var(--text); border-color: var(--amber); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th {
+    text-align: left; font: 10px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 0 10px 8px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid rgba(51,44,72,.45); vertical-align: middle; }
+  tbody tr:hover { background: rgba(38,33,56,.55); }
+  .num { text-align: right; }
+  .sym { font-weight: 650; }
+  .mint { color: var(--muted); font-size: 10px; }
+  .mint a { color: inherit; text-decoration: none; }
+  .mint a:hover { color: var(--amber); }
+  .est { color: var(--muted); font-size: 10px; }
+
+  /* Hold-age meter — the whole point of the tool, so it gets the one bit of colour. */
+  .age { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+  .age .val { width: 52px; }
+  .track { flex: 1; height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
+  .fill { height: 100%; background: var(--amber); border-radius: 2px; }
+
+  .dots { display: inline-flex; gap: 3px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+  .dot.off { background: var(--panel-2); }
+
+  .rule {
+    display: flex; align-items: center; gap: 6px; padding: 5px 0;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .rule .scope {
+    font-family: var(--sans); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px; background: var(--panel-2); color: var(--muted);
+  }
+  .rule .scope.wallet { color: var(--amber); }
+  .rule .body { flex: 1; }
+  .rule.off .body { opacity: .4; text-decoration: line-through; }
+  .rule button { background: none; border: 0; color: var(--muted); padding: 2px 4px; }
+  .rule button:hover { color: var(--text); }
+
+  .empty { color: var(--muted); padding: 40px 10px; text-align: center; }
+  .err { color: var(--red); font-size: 11px; margin-top: 8px; }
+  @media (prefers-reduced-motion: no-preference) { .fill { transition: width .3s ease; } }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside { min-height: 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Wallet <span>criteria</span> tracker</h1>
+  <span class="stamp" id="stamp">not refreshed yet</span>
+  <button class="rebuild" id="rebuild" title="Re-derive every holding time from transaction history">Rebuild history</button>
+  <button class="refresh" id="refresh">Refresh</button>
+</header>
+
+<main>
+  <aside>
+    <section>
+      <p class="eyebrow">Wallets</p>
+      <div id="wallets"></div>
+      <div class="err" id="wallet-err"></div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Add wallet</p>
+      <input type="text" id="w-address" placeholder="Solana address" spellcheck="false">
+      <div class="row2">
+        <input type="text" id="w-label" placeholder="Label">
+        <input type="text" id="w-group" placeholder="Group">
+      </div>
+      <button class="ghost" id="w-add">Add and backfill</button>
+    </section>
+
+    <section>
+      <p class="eyebrow">Minimum value</p>
+      <div class="minrow">
+        <span class="dollar">$</span>
+        <input type="number" id="minUsd" value="0" min="0" step="10">
+      </div>
+      <div class="chips">
+        <button class="chip" data-min="0">Off</button>
+        <button class="chip" data-min="50">$50</button>
+        <button class="chip" data-min="250">$250</button>
+        <button class="chip" data-min="1000">$1k</button>
+      </div>
+      <p class="hint" id="min-hint">Showing every position.</p>
+    </section>
+
+    <section>
+      <p class="eyebrow">Combined view</p>
+      <select id="mode">
+        <option value="union">Any selected wallet holds it</option>
+        <option value="intersection">All selected wallets hold it</option>
+        <option value="min">At least N wallets hold it</option>
+      </select>
+      <input type="number" id="minWallets" value="2" min="2" hidden>
+    </section>
+  </aside>
+
+  <div>
+    <section>
+      <p class="eyebrow">Criteria</p>
+      <div id="rules"></div>
+      <div class="row2" style="margin-top:10px">
+        <select id="r-scope">
+          <option value="global">All wallets</option>
+        </select>
+        <select id="r-field"></select>
+      </div>
+      <div class="row2">
+        <select id="r-op"></select>
+        <input type="text" id="r-value" placeholder="Value">
+      </div>
+      <button class="ghost" id="r-add">Add criterion</button>
+    </section>
+
+    <section>
+      <div class="tabs">
+        <button class="tab" id="tab-rows" aria-selected="true">By wallet</button>
+        <button class="tab" id="tab-combined" aria-selected="false">Combined</button>
+      </div>
+      <div id="table"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const api = async (url, opts) => {
+  const res = await fetch(url, opts && { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+};
+
+const state = { wallets: [], selected: new Set(), rules: [], meta: {}, data: null, tab: 'rows' };
+
+/* ---------- formatting ---------- */
+const fmtUsd = v => v == null ? '—' : v >= 1000 ? '$' + Math.round(v).toLocaleString() : '$' + v.toFixed(2);
+const fmtAmt = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : v.toFixed(2);
+const fmtAge = h => h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : Math.floor(h / 24) + 'd';
+const short = a => a.slice(0, 4) + '…' + a.slice(-4);
+
+// Meter is capped at one week, so anything long-term reads as a full bar.
+const meter = h => `<div class="age"><span class="val">${fmtAge(h)}</span>
+  <div class="track"><div class="fill" style="width:${Math.min(h / 168, 1) * 100}%"></div></div></div>`;
+
+const dots = (n, total) => `<span class="dots">${
+  Array.from({ length: total }, (_, i) => `<span class="dot ${i < n ? '' : 'off'}"></span>`).join('')
+}</span>`;
+
+/* ---------- wallets ---------- */
+function renderWallets() {
+  const el = $('wallets');
+  if (!state.wallets.length) {
+    el.innerHTML = '<p class="empty" style="padding:16px 0">No wallets yet. Add one below.</p>';
+    return;
+  }
+  const counts = Object.fromEntries((state.data?.wallets || []).map(w => [w.address, w.matched]));
+  el.innerHTML = state.wallets.map(w => `
+    <div class="wallet">
+      <input type="checkbox" id="cb-${w.address}" ${state.selected.has(w.address) ? 'checked' : ''}>
+      <label for="cb-${w.address}">
+        <span class="nm">${w.label || short(w.address)}${w.grp ? ` · ${w.grp}` : ''}</span>
+        <span class="ad">${short(w.address)}</span>
+      </label>
+      <span class="ct">${counts[w.address] ?? '·'}</span>
+      <button class="rm" data-rm="${w.address}" title="Remove wallet">✕</button>
+    </div>`).join('');
+
+  el.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
+    const addr = cb.id.slice(3);
+    cb.checked ? state.selected.add(addr) : state.selected.delete(addr);
+    loadHoldings();
+  });
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove this wallet and its history?')) return;
+    await api('/api/wallets/' + b.dataset.rm, { method: 'DELETE' });
+    state.selected.delete(b.dataset.rm);
+    await loadWallets();
+    loadHoldings();
+  });
+
+  $('r-scope').innerHTML = '<option value="global">All wallets</option>' +
+    state.wallets.map(w => `<option value="wallet:${w.address}">Only ${w.label || short(w.address)}</option>`).join('');
+}
+
+async function loadWallets() {
+  state.wallets = await api('/api/wallets');
+  if (!state.selected.size) state.wallets.forEach(w => state.selected.add(w.address));
+  renderWallets();
+}
+
+$('w-add').onclick = async () => {
+  const address = $('w-address').value.trim();
+  $('wallet-err').textContent = '';
+  $('w-add').disabled = true;
+  $('w-add').textContent = 'Backfilling…';
+  try {
+    await api('/api/wallets', { method: 'POST', body: JSON.stringify({
+      address, label: $('w-label').value.trim(), group: $('w-group').value.trim(),
+    })});
+    $('w-address').value = $('w-label').value = $('w-group').value = '';
+    state.selected.add(address);
+    await loadWallets();
+    await loadHoldings();
+  } catch (e) {
+    $('wallet-err').textContent = e.message;
+  }
+  $('w-add').disabled = false;
+  $('w-add').textContent = 'Add and backfill';
+};
+
+/* ---------- rules ---------- */
+function renderRules() {
+  const { fields, ops } = state.meta;
+  $('rules').innerHTML = state.rules.length ? state.rules.map(r => {
+    const w = state.wallets.find(x => x.address === r.target);
+    const scope = r.scope === 'global' ? 'All' : (w?.label || short(r.target || ''));
+    return `<div class="rule ${r.enabled ? '' : 'off'}">
+      <span class="scope ${r.scope}">${scope}</span>
+      <span class="body">${fields[r.field]?.label || r.field} ${ops[r.op] || r.op}
+        ${r.value.length > 30 ? r.value.split(',').length + ' mints' : r.value}</span>
+      <button data-toggle="${r.id}">${r.enabled ? 'mute' : 'unmute'}</button>
+      <button data-del="${r.id}">✕</button>
+    </div>`;
+  }).join('') : '<p class="empty" style="padding:12px 0">No criteria — every token shows.</p>';
+
+  $('rules').querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {
+    const r = state.rules.find(x => x.id == b.dataset.toggle);
+    await api('/api/rules/' + r.id, { method: 'PATCH', body: JSON.stringify({ ...r, enabled: !r.enabled }) });
+    await loadRules(); loadHoldings();
+  });
+  $('rules').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    await api('/api/rules/' + b.dataset.del, { method: 'DELETE' });
+    await loadRules(); loadHoldings();
+  });
+}
+
+async function loadRules() {
+  const { rules, fields, ops } = await api('/api/rules');
+  state.rules = rules; state.meta = { fields, ops };
+  $('r-field').innerHTML = Object.entries(fields).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+  $('r-op').innerHTML = Object.entries(ops).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  renderRules();
+}
+
+$('r-add').onclick = async () => {
+  const scopeRaw = $('r-scope').value;
+  const [scope, target] = scopeRaw.startsWith('wallet:') ? ['wallet', scopeRaw.slice(7)] : ['global', null];
+  const value = $('r-value').value.trim();
+  if (!value) return;
+  await api('/api/rules', { method: 'POST', body: JSON.stringify({
+    scope, target, field: $('r-field').value, op: $('r-op').value, value,
+  })});
+  $('r-value').value = '';
+  await loadRules(); loadHoldings();
+};
+
+/* ---------- table ---------- */
+function renderTable() {
+  const d = state.data;
+  if (!d) return;
+
+  if (state.tab === 'rows') {
+    $('table').innerHTML = d.rows.length ? `<table>
+      <thead><tr>
+        <th>Wallet</th><th>Token</th><th>Held for</th>
+        <th class="num">Amount</th><th class="num">Left of peak</th><th class="num">Value</th>
+      </tr></thead><tbody>${d.rows.map(r => `<tr>
+        <td>${r.wallet_label}</td>
+        <td><span class="sym">${r.symbol}</span>
+          <span class="mint"><a href="https://dexscreener.com/solana/${r.mint}" target="_blank" rel="noopener">${short(r.mint)}</a></span></td>
+        <td>${meter(r.held_hours)}${r.estimated ? '<span class="est" title="Token-account age, not parsed history">approx</span>' : ''}</td>
+        <td class="num">${fmtAmt(r.amount)}</td>
+        <td class="num">${Math.round(r.remaining_pct)}%</td>
+        <td class="num">${fmtUsd(r.usd_value)}</td>
+      </tr>`).join('')}</tbody></table>`
+      : '<p class="empty">No holdings match your criteria. Loosen a rule or press Refresh.</p>';
+    return;
+  }
+
+  const total = d.wallets.length;
+  $('table').innerHTML = d.combined.length ? `<table>
+    <thead><tr>
+      <th>Token</th><th>Wallets</th><th>Held for</th>
+      <th class="num">Total amount</th><th class="num">Total value</th>
+    </tr></thead><tbody>${d.combined.map(c => `<tr>
+      <td><span class="sym">${c.symbol}</span>
+        <span class="mint"><a href="https://dexscreener.com/solana/${c.mint}" target="_blank" rel="noopener">${short(c.mint)}</a></span></td>
+      <td>${dots(c.holder_count, total)} <span class="mint">${c.holders.map(h => h.label).join(', ')}</span></td>
+      <td>${meter(c.held_hours_min)}<span class="est">${c.holder_count > 1 ? 'newest' : ''}</span></td>
+      <td class="num">${fmtAmt(c.amount)}</td>
+      <td class="num">${fmtUsd(c.usd_value)}</td>
+    </tr>`).join('')}</tbody></table>`
+    : '<p class="empty">Nothing is held by enough of the selected wallets.</p>';
+}
+
+$('tab-rows').onclick = () => switchTab('rows');
+$('tab-combined').onclick = () => switchTab('combined');
+function switchTab(tab) {
+  state.tab = tab;
+  $('tab-rows').ariaSelected = tab === 'rows';
+  $('tab-combined').ariaSelected = tab === 'combined';
+  renderTable();
+}
+
+$('mode').onchange = () => {
+  $('minWallets').hidden = $('mode').value !== 'min';
+  loadHoldings();
+};
+$('minWallets').onchange = loadHoldings;
+
+/* ---------- minimum value ---------- */
+function syncMinUi() {
+  const v = Number($('minUsd').value || 0);
+  document.querySelectorAll('.chip').forEach(c => c.ariaPressed = Number(c.dataset.min) === v);
+  $('min-hint').textContent = v > 0
+    ? `Hiding anything under $${v}, including tokens with no price yet.`
+    : 'Showing every position.';
+}
+
+let minTimer;
+$('minUsd').oninput = () => {
+  syncMinUi();
+  clearTimeout(minTimer);
+  minTimer = setTimeout(loadHoldings, 350);
+};
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+  $('minUsd').value = c.dataset.min;
+  syncMinUi();
+  loadHoldings();
+});
+
+async function loadHoldings() {
+  const params = new URLSearchParams({
+    wallets: [...state.selected].join(','),
+    mode: $('mode').value,
+    minWallets: $('minWallets').value,
+    minUsd: $('minUsd').value || 0,
+  });
+  state.data = await api('/api/holdings?' + params);
+  renderWallets();
+  renderTable();
+}
+
+/* ---------- refresh ---------- */
+$('refresh').onclick = async () => {
+  const btn = $('refresh');
+  btn.disabled = true; btn.textContent = 'Refreshing…';
+  try {
+    const r = await api('/api/refresh', { method: 'POST', body: JSON.stringify({ wallets: [...state.selected] }) });
+    await loadHoldings();
+    $('stamp').textContent = `updated ${new Date().toLocaleTimeString()}` +
+      (r.dated ? ` · ${r.dated} dated from chain` : '') +
+      (r.errors?.length ? ` · ${r.errors.length} wallet(s) failed` : '');
+  } catch (e) {
+    $('stamp').textContent = e.message;
+  }
+  btn.disabled = false; btn.textContent = 'Refresh';
+};
+
+$('rebuild').onclick = async () => {
+  if (!confirm('Re-read transaction history for every open position? Takes a moment.')) return;
+  const btn = $('rebuild');
+  btn.disabled = true; btn.textContent = 'Rebuilding…';
+  try {
+    const r = await api('/api/rebuild', { method: 'POST', body: JSON.stringify({ wallets: [...state.selected] }) });
+    await loadHoldings();
+    $('stamp').textContent = `rebuilt ${r.dated} positions from chain`;
+  } catch (e) {
+    $('stamp').textContent = e.message;
+  }
+  btn.disabled = false; btn.textContent = 'Rebuild history';
+};
+
+(async () => {
+  syncMinUi();
+  await loadRules();
+  await loadWallets();
+  await loadHoldings();
+})();
+</script>
+</body>
+</html>
