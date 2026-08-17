@@ -120,6 +120,7 @@
   .mint:hover { color: var(--amber); background: var(--panel-2); }
   .mint.copied { color: var(--teal); }
   .est { color: var(--muted); font-size: 10px; }
+  .val.pending { color: var(--muted); font-style: italic; }
 
   /* Hold-age meter — the whole point of the tool, so it gets the one bit of colour. */
   .age { display: flex; align-items: center; gap: 8px; min-width: 130px; }
@@ -258,9 +259,13 @@ const fmtAmt = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3)
 const fmtAge = h => h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : Math.floor(h / 24) + 'd';
 const short = a => a.slice(0, 4) + '…' + a.slice(-4);
 
-// Meter is capped at one week, so anything long-term reads as a full bar.
-const meter = h => `<div class="age"><span class="val">${fmtAge(h)}</span>
-  <div class="track"><div class="fill" style="width:${Math.min(h / 168, 1) * 100}%"></div></div></div>`;
+// Meter is capped at one week, so anything long-term reads as a full bar. A pending row
+// has no duration yet — show that plainly rather than a misleading 0m.
+const meter = (h, pending) => pending
+  ? `<div class="age"><span class="val pending">pending</span>
+       <div class="track"></div></div>`
+  : `<div class="age"><span class="val">${fmtAge(h)}</span>
+       <div class="track"><div class="fill" style="width:${Math.min(h / 168, 1) * 100}%"></div></div></div>`;
 
 const dots = (n, total) => `<span class="dots">${
   Array.from({ length: total }, (_, i) => `<span class="dot ${i < n ? '' : 'off'}"></span>`).join('')
@@ -388,7 +393,7 @@ function renderTable() {
         <td>${r.wallet_label}</td>
         <td><span class="sym">${r.symbol}</span>
           <button class="mint" data-ca="${r.mint}" title="Copy contract address">${short(r.mint)}</button></td>
-        <td>${meter(r.held_hours)}${r.estimated ? '<span class="est" title="Token-account age, not parsed history">approx</span>' : ''}</td>
+        <td>${meter(r.held_hours, r.pending)}${r.estimated === 1 ? '<span class="est" title="Token-account age, not parsed history">approx</span>' : ''}</td>
         <td class="num">${fmtAmt(r.amount)}</td>
         <td class="num">${Math.round(r.remaining_pct)}%</td>
         <td class="num">${fmtUsd(r.usd_value)}</td>
@@ -494,7 +499,8 @@ $('refresh').onclick = async () => {
     const r = await api('/api/refresh', { method: 'POST', body: JSON.stringify({ wallets: [...state.selected] }) });
     await loadHoldings();
     $('stamp').textContent = `updated ${new Date().toLocaleTimeString()}` +
-      (r.dated ? ` · ${r.dated} dated from chain` : '');
+      (r.dated ? ` · ${r.dated} dated` : '') +
+      (r.pending ? ` · ${r.pending} pending, press again` : '');
     showSyncErrors(r.errors);
   } catch (e) {
     $('stamp').textContent = e.message;
