@@ -39,28 +39,41 @@ export async function syncWallet(address, { backfill = true, rebuild = false } =
   const seen = new Set();
   let dated = 0;
 
-  for (const h of holdings) {
-    seen.add(h.mint);
+  // Build every row first, then spend the dating budget on the rows that need it most.
+  // estimated: 0 = exact from parsed history, 1 = approximated from token-account age,
+  // 2 = never dated, still showing a placeholder.
+  const rows = holdings.map(h => {
     const prev = q.position.get(address, h.mint);
     const holding = prev && prev.amount > 0 && prev.held_since;
+    return {
+      h,
+      prev,
+      held_since: holding ? prev.held_since : now,
+      estimated: holding ? prev.estimated : 2,
+      peak_amount: Math.max(h.amount, holding ? (prev.peak_amount ?? 0) : 0),
+    };
+  });
 
-    let held_since = holding ? prev.held_since : now;
-    let estimated = holding ? prev.estimated : 0;
-    let peak_amount = Math.max(h.amount, holding ? (prev.peak_amount ?? 0) : 0);
+  // Undated rows first, then approximations. Without this ordering a wallet holding more
+  // tokens than the cap would keep re-dating the same ones and never reach the rest.
+  const queue = rows
+    .filter(r => rebuild || r.estimated >= 1)
+    .sort((a, b) => b.estimated - a.estimated);
 
-    // Date it from chain if we've never recorded it, or if a previous pass could only
-    // approximate it. Bounded so one refresh can't run forever.
-    const needsDating = rebuild || !prev || prev.estimated === 1;
-    if (needsDating && dated < MAX_DATED_PER_SYNC) {
-      const chain = await fromChain(h, address);
-      if (chain) {
-        held_since = chain.held_since;
-        estimated = chain.estimated;
-        peak_amount = Math.max(chain.peak_amount, h.amount);
-        dated++;
-      }
+  for (const row of queue) {
+    if (dated >= MAX_DATED_PER_SYNC) break;
+    const chain = await fromChain(row.h, address);
+    if (chain) {
+      row.held_since = chain.held_since;
+      row.estimated = chain.estimated;
+      row.peak_amount = Math.max(chain.peak_amount, row.h.amount);
+      dated++;
     }
+  }
 
+  for (const row of rows) {
+    const { h, prev } = row;
+    seen.add(h.mint);
     q.upsertPos.run({
       wallet: address,
       mint: h.mint,
@@ -70,10 +83,10 @@ export async function syncWallet(address, { backfill = true, rebuild = false } =
       amount: h.amount,
       usd: h.usd,
       ata: h.ata,
-      first_seen: prev?.first_seen ?? held_since,
-      held_since,
-      estimated,
-      peak_amount,
+      first_seen: prev?.first_seen ?? row.held_since,
+      held_since: row.held_since,
+      estimated: row.estimated,
+      peak_amount: row.peak_amount,
       last_seen: now,
     });
     q.addSnapshot.run(address, h.mint, h.amount, h.usd, now);
@@ -88,20 +101,23 @@ export async function syncWallet(address, { backfill = true, rebuild = false } =
   }
 
   q.touchWallet.run(now, address);
-  return { positions: holdings.length, dated };
+  const pending = rows.filter(r => r.estimated >= 1).length;
+  return { positions: holdings.length, dated, pending };
 }
 
 /** Refresh several wallets with a small parallel pool. Never throws — failures come back as errors[]. */
 export async function syncWallets(addresses, opts = {}) {
   const queue = [...addresses];
   const errors = [];
-  let dated = 0;
+  let dated = 0, pending = 0;
 
   const worker = async () => {
     while (queue.length) {
       const address = queue.shift();
       try {
-        dated += (await syncWallet(address, opts)).dated;
+        const r = await syncWallet(address, opts);
+        dated += r.dated;
+        pending += r.pending;
       } catch (e) {
         console.error(`sync failed for ${address}: ${e.message}`);
         errors.push({ address, message: e.message });
@@ -110,13 +126,13 @@ export async function syncWallets(addresses, opts = {}) {
   };
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, addresses.length) }, worker));
-  return { synced: addresses.length - errors.length, dated, errors };
+  return { synced: addresses.length - errors.length, dated, pending, errors };
 }
 
 /** Optional timed pass. See README: you only need this to catch round trips. */
 export async function snapshotAll() {
   const addresses = q.wallets.all().map(w => w.address);
-  if (!addresses.length) return { synced: 0, dated: 0, errors: [] };
+  if (!addresses.length) return { synced: 0, dated: 0, pending: 0, errors: [] };
   return syncWallets(addresses, { backfill: true });
 }
 
