@@ -28,6 +28,7 @@ export function enrich(p, now = Date.now()) {
     held_hours,
     usd_value: p.usd ?? 0,
     remaining_pct: peak > 0 ? (p.amount / peak) * 100 : 100,
+    pending: p.estimated === 2,   // never dated from chain — duration not known yet
   };
 }
 
